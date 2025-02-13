@@ -1,0 +1,215 @@
+--1 bemutatja, hogy az egyes orvosok hány vizsgálatot végeztek és ennek során hány beteget láttak el. Van 6 olyan beteg, akik nem csak egy orvosnál jártak, ők minden őket kezelő orvosnál elszámolásra kerültek--
+
+SELECT o.Orvos_nev AS 'Az orvos neve', count(v.Vizsgalat_ID) AS 'Az elvégzett vizsgálatok száma', 
+
+ count(DISTINCT v.Beteg_taj) AS 'A kezelt betegek száma' 
+
+FROM Vizsgalat v JOIN orvos o on v.Orvos_ID = o.Orvos_ID 
+
+GROUP BY o.Orvos_nev 
+
+
+
+
+--2 lehetővé teszi egy kiválasztott orvos, jelen esetben dr. Bessenyei Péter tekintetében annak leválogatását, hogy a betegei milyen céllal keresték fel az orvosi rendelőt.--
+
+SELECT o.Orvos_nev AS 'Orvos neve', c.Cel_nev AS 'Orvos látogatás célja', count(Vizsgalat_ID) AS 'Orvos látogatás darabszáma' 
+
+FROM Vizsgalat v JOIN orvos o on v.Orvos_ID = o.Orvos_ID 
+
+JOIN Cel c on v.cel_ID = c.Cel_ID 
+
+GROUP BY o.Orvos_nev, c.Cel_nev 
+
+HAVING o.Orvos_nev Like 'dr. Bessenyei%' 
+
+ORDER BY o.Orvos_nev, count(Vizsgalat_ID) DESC 
+
+
+
+
+--3 leválogatja az egyes orvosok betegeinek korcsoportonkénti megoszlását, három korcsoport megkülönböztetésével:--
+
+SELECT Orvos_nev AS 'Orvos neve', Korcsoport , count(Beteg_taj) AS 'Korcsoportba tartozó betegek száma' 
+
+FROM 
+
+(SELECT DISTINCT b.Beteg_taj, b.Beteg_szulido, CASE 
+
+WHEN Beteg_szulido <'1960.01.01' THEN 'Idős' 
+
+WHEN Beteg_szulido >'1990.01.01' THEN 'Fiatal' 
+
+ELSE 'Középkorú' 
+
+END AS 'Korcsoport', v.Orvos_ID, o.Orvos_nev 
+
+FROM Beteg b JOIN vizsgalat v on b.Beteg_taj = v.Beteg_taj 
+
+JOIN orvos o on v.Orvos_ID = o.Orvos_ID) 
+
+GROUP BY Orvos_nev, Korcsoport 
+
+ORDER BY Orvos_nev, count(Beteg_taj) DESC 
+
+
+
+
+--4 lehetővé teszi a betegek névtöredéke alapján annak lekérdezését, hogy mikor, milyen céllal, tünetekkel látogattak az orvosi rendelőbe, és ott milyen gyógyszereket írtak fel a számukra:--
+
+SELECT v.Vizsgal_date AS 'Vizsgálat dátuma', v.Vizsgal_time AS 'Vizsgálat időpontja', 
+
+o.Orvos_nev AS 'Orvos neve', 
+
+b.Beteg_taj AS 'Beteg tajszáma', b.Beteg_nev 'Beteg neve',b.Beteg_szulido AS 'Beteg születési ideje', 
+
+v.tappenz_ AS 'Táppénz igény', c.Cel_nev AS 'Rendelő felkeresésének célja', 
+
+t.tunet_nev AS 'Tünet', tv.tunetnev2 AS 'Tünet 2', 
+
+g.gyogyszer_nev AS 'gyógyszer', gv.gyogyszer_nev2 AS 'gyógyszer2' 
+
+FROM Vizsgalat v LEFT join Beteg b on v.Beteg_taj=b.Beteg_taj 
+
+Left join Cel c ON v.cel_ID=c.cel_ID 
+
+Left join Tunet t on v.tunet_ID = t.tunet_ID 
+
+Left join tunetView tv on v.tunet2 = tv.tunet_ID 
+
+Left join Gyogyszer g on v.gyogyszer_ID= g.gyogyszer_ID  
+
+Left join gyogyszerView gv on v.gyogyszer2 = gv.gyogyszer_ID 
+
+Left join Orvos o on v.Orvos_ID=o.Orvos_ID 
+
+Where b.Beteg_nev Like "Horváth%" 
+
+
+
+
+--5 lehetővé teszi az orvosok által felírt gyógyszerek lekérdezését gyakoriság szerint csökkenő sorrendben: --
+
+SELECT gyogyszer_nev AS 'Gyógyszer neve', count(beteg_taj) AS 'Hányszor irták fel:' 
+
+FROM( 
+
+SELECT v.Beteg_taj, v.gyogyszer_ID, g.gyogyszer_nev 
+
+FROM Vizsgalat v LEFT join Gyogyszer g on v.gyogyszer_ID=g.gyogyszer_ID 
+
+UNION ALL 
+
+SELECT v.Beteg_taj, v.gyogyszer2, g.gyogyszer_nev 
+
+FROM Vizsgalat v LEFT join Gyogyszer g on v.gyogyszer2=g.gyogyszer_ID) 
+
+WHERE gyogyszer_nev<> '' 
+
+GROUP BY gyogyszer_nev 
+
+ORDER BY count(beteg_taj) DESC 
+
+
+
+--6 lehetővé teszi annak lekérdezését, hogy melyek azok az utcák, ahol a legtöbb (jelenlegi beállítás szerint több mint 4) azonos tünetet mutató beteg lakik (ebből esetleg lehet járvány kitörésére következtetni):--
+
+SELECT Város,SUBSTR(utca2,0, (instr(utca2, " " ))) AS 'utca', tunet_nev AS 'Tünet', 
+
+COUNT(Beteg_taj) AS 'A tüneteket hordozó betegek száma' 
+
+FROM 
+
+(SELECT Beteg_taj, tunet_ID, tunet_nev,Beteg_cime, SUBSTR(Beteg_cime, 0, INSTR(Beteg_cime, ',')) AS 'Város',  
+
+ SUBSTR(Beteg_cime, (INSTR(Beteg_cime, ',')+2) ) AS 'utca2' 
+
+  FROM (SELECT v.Beteg_taj, v.tunet_ID, t.tunet_nev, b.Beteg_cime 
+
+        FROM 
+
+        (SELECT Beteg_taj, tunet_ID 
+
+          FROM Vizsgalat 
+
+          UNION ALL 
+
+          SELECT Beteg_taj, tunet2 
+
+          FROM Vizsgalat) v LEFT JOIN Beteg b 
+
+          on b.Beteg_taj = v.Beteg_taj 
+
+          LEFT JOIN tunet t on t.tunet_ID = v.tunet_ID 
+
+ )) 
+
+WHERE tunet_ID > 1 
+
+GROUP BY Város, utca, tunet_nev
+
+HAVING COUNT(Beteg_taj) > 3 
+
+ORDER BY COUNT(Beteg_taj) DESC, utca 
+
+
+
+
+--7 lehetővé teszi, hogy láthatjuk, hogy ki az a beteg, akinek van allergiája és összesen hány beteg rendelkezik allergiával.--
+
+SELECT NULL AS "Beteg_nev" , count(allergia_ID) AS "Allergiak szama"
+from Beteg
+Union 
+select Beteg_nev , count(allergia_ID)
+from Beteg
+group by Beteg_nev
+order by Beteg_nev ASC;
+
+
+
+
+--8 lehetővé teszi, hogy láthatjuk, hogyan oszlik meg a táppénz igénylések száma, orvos látogatásonként, kibővítve betegenként egy összegző táppénz igénylések számának oszlopával --
+
+SELECT v.Beteg_taj, 
+       b.Beteg_nev,
+       v.Orvos_ID,
+       v.tappenz_,
+    count (tappenz_) OVER (
+        PARTITION BY b.Beteg_nev
+        ORDER by v.Orvos_ID
+        RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        ) AS "Tappenz igenylesek szama" 
+FROM Vizsgalat as v
+JOIN Beteg as b using (Beteg_taj)
+Where tappenz_ = 1
+
+
+
+--9 lekérdezés: betegek hány alkalommal mentek vizsgálatra--
+
+SELECT b.beteg_nev, count(s.Vizsgalat_ID) AS 'Latogatasok alkalma'
+FROM Vizsgalat as s
+JOIN Beteg as b using (Beteg_taj)
+GROUP BY s.Beteg_taj
+
+
+
+--10 lekérdezés: egyes orvosok esetében mely betegek igényeltek a legtöbb alkalommal táppénzt.
+
+SELECT DISTINCT v.Beteg_taj, 
+       b.Beteg_nev,
+       o.Orvos_nev,
+       count (tappenz_) OVER (
+        PARTITION BY b.Beteg_nev
+        ORDER by Orvos_ID
+        RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        ) AS "Tappenz igenylesek szama" 
+FROM Vizsgalat as v
+JOIN Beteg as b using (Beteg_taj)
+JOIN Orvos as o using (Orvos_ID) 
+WHERE tappenz_ = 1
+ORDER BY "Tappenz igenylesek szama" DESC
+
+
+
+--------------------------------------------------------------
